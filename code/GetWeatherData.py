@@ -140,4 +140,6 @@ if __name__ == "__main__":
     plt.title("Montreal hourly temperature (2m)")
     plt.ylabel("T [°C]")
     plt.tight_layout()
+    plt.grid(True)
+    plt.savefig('plots/montreal.png')
     plt.show()
