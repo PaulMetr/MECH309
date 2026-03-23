@@ -152,8 +152,8 @@ if __name__ == "__main__":
     print(df_train.shape)
     print(df_control.shape)
 
-    y = np.asarray(df_train['T'][0:nmin])
-    params = np.asarray(df_train[df_train.columns.drop('T')][0:nmin])
+    y = np.asarray(df_train['T'])
+    params = np.asarray(df_train[df_train.columns.drop('T')])
 
     print(y)
     print(params)
@@ -171,4 +171,5 @@ if __name__ == "__main__":
     plt.plot(y, label='Measurements', color='blue')
     plt.plot(y_fit, label=f'Model, RMSE={rmse}, MAE={mae}', color='red')
     plt.legend()
+    plt.savefig('plots/leastsquares.png')
     plt.show()
