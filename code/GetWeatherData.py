@@ -132,8 +132,10 @@ if __name__ == "__main__":
 
     print(f"Fetching Open-Meteo hourly data for {montreal.name}...")
     df_raw = fetch_open_meteo_hourly(start_date, end_date, location=montreal)
+    print(df_raw)
     print("Preprocessing...")
     df = preprocess(df_raw)
+    print(df)
 
     plt.figure()
     df["T"].plot(linewidth=1)
@@ -142,4 +144,4 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.grid(True)
     plt.savefig('plots/montreal.png')
-    plt.show()
+    #plt.show()
