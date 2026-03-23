@@ -147,8 +147,8 @@ if __name__ == "__main__":
     plt.show()
 
     n = df.shape[0]
-    df_train = df[:n//2]
-    df_control = df[n//2+1:]
+    df_train = df[:n//2].copy()
+    df_control = df[n//2+1:].copy()
     print(df_train.shape)
     print(df_control.shape)
 
@@ -176,7 +176,11 @@ if __name__ == "__main__":
     plt.plot(y, label='Measurements', color='blue')
     plt.plot(y_fit, label=f'Model, RMSE={rmse}, MAE={mae}', color='red')
     plt.legend()
+    plt.ylabel('Air Temperature (2m) [°C]')
+    plt.xlabel('Time')
+    plt.title('Air temperature measurement and prediction for Montréal, QC')
     plt.savefig('plots/leastsquares.png')
+    plt.grid(True)
     plt.show()
     #tbc: add lag
     # or interpolation ?
