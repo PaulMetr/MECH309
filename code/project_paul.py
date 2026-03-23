@@ -174,3 +174,4 @@ if __name__ == "__main__":
     plt.savefig('plots/leastsquares.png')
     plt.show()
     #tbc: add lag
+    # or interpolation ?
