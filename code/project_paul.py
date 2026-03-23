@@ -171,4 +171,5 @@ if __name__ == "__main__":
     plt.plot(y, label='Measurements', color='blue')
     plt.plot(y_fit, label=f'Model, RMSE={rmse}, MAE={mae}', color='red')
     plt.legend()
+    plt.savefig('plots/leastsquares.png')
     plt.show()
