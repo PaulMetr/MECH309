@@ -173,3 +173,4 @@ if __name__ == "__main__":
     plt.legend()
     plt.savefig('plots/leastsquares.png')
     plt.show()
+    #tbc: add lag
