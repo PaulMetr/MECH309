@@ -153,8 +153,10 @@ if __name__ == "__main__":
     print(df_control.shape)
 
     y = np.asarray(df_train['T'])
-    df_train = add_lags(df_train, 'T', [1])
+    df_train = add_lags(df_train, 'T', [1, 2])
     df_train['T_lag1'][0] = df_train['T'][0]
+    df_train['T_lag2'][0] = df_train['T'][0]
+    df_train['T_lag2'][1] = df_train['T'][1]
     print(df_train)
     params = np.asarray(df_train[df_train.columns.drop('T')])
 
