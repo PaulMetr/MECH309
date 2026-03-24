@@ -136,7 +136,7 @@ if __name__ == "__main__":
     print("Preprocessing...")
     df = preprocess(df_raw)
     #print(df)
-
+    #plot initial data
     plt.figure()
     df["T"].plot(linewidth=1)
     plt.title("Montreal hourly temperature (2m)")
@@ -146,33 +146,41 @@ if __name__ == "__main__":
     plt.savefig('plots/montreal.png')
     plt.show()
 
-    n = df.shape[0]
+    n = df.shape[0] #get dataframe size
+
+    #add lags for Temperature
+    df = add_lags(df, 'T', [1, 2, 3])
+    df['T_lag1'][0] = df['T'][0]
+    df['T_lag2'][0] = df['T'][0]
+    df['T_lag2'][1] = df['T'][1]
+    df['T_lag3'][0] = df['T'][0]
+    df['T_lag3'][1] = df['T'][1]
+    df['T_lag3'][2] = df['T'][2]
+    #split dataframe into training and control data
     df_train = df[:n//2].copy()
     df_control = df[n//2+1:].copy()
+    #print to verify
     print(df_train.shape)
     print(df_control.shape)
-
-    y = np.asarray(df_train['T'])
-    df_train = add_lags(df_train, 'T', [1, 2])
-    df_train['T_lag1'][0] = df_train['T'][0]
-    df_train['T_lag2'][0] = df_train['T'][0]
-    df_train['T_lag2'][1] = df_train['T'][1]
+    #write an Ax=b problem
+    y = np.asarray(df_train['T']) #what we try to predict
     print(df_train)
-    params = np.asarray(df_train[df_train.columns.drop('T')])
-
+    params = np.asarray(df_train[df_train.columns.drop('T')]) #prediction parameters
     print(y)
     print(params)
     print(y[0])
     A = params
-
+    #solve the least square problem with SVD
     U, S, Vh = np.linalg.svd(A, full_matrices=False)
     sigma_inv = np.diag(np.power(S, -1))
     x = Vh.T@sigma_inv@U.T@y
     #print(x)
+    #apply it to the train data
     y_fit = A@x
-    #print(y_fit)
+    #compute errors
     rmse = np.sqrt(np.mean((y_fit - y)**2))
     mae = np.mean(np.abs(y_fit - y))
+    #plot results
     plt.plot(y, label='Measurements', color='blue')
     plt.plot(y_fit, label=f'Model, RMSE={rmse}, MAE={mae}', color='red')
     plt.legend()
@@ -182,5 +190,25 @@ if __name__ == "__main__":
     plt.savefig('plots/leastsquares.png')
     plt.grid(True)
     plt.show()
-    #tbc: add lag
-    # or interpolation ?
+    #minimum of n//2 and n//2+1
+    m = min(df_train.shape[0], df_control.shape[0])
+    #define new A matrix
+    params_prediction = np.asarray(df_control[df_control.columns.drop('T')])[0:m,:]
+    A_pred = params_prediction
+    y_pred = np.asarray(df_control['T'])[0:m]
+    #apply model to control data
+    y_pred_fit = A_pred@x
+    y_pred_fit = y_pred_fit[0:m]
+    #compute new error
+    rmse_pred = np.sqrt(np.mean((y_pred_fit - y_pred)**2))
+    mae_pred = np.mean(np.abs(y_pred_fit - y_pred))
+    #plot everything
+    plt.plot(y_pred, label='Measurements', color='blue')
+    plt.plot(y_pred_fit, label=f'Model, RMSE={rmse_pred}, MAE={mae_pred}', color='red')
+    plt.legend()
+    plt.ylabel('Air Temperature (2m) [°C]')
+    plt.xlabel('Time')
+    plt.title('Air temperature measurement and prediction for Montréal, QC')
+    plt.savefig('plots/leastsquares_prediction.png')
+    plt.grid(True)
+    plt.show()
