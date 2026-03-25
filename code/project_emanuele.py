@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+import os
 from typing import List, Tuple
 
 import numpy as np
@@ -101,7 +102,12 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     doy = df.index.dayofyear.to_numpy()
     omega_y = 2 * math.pi / 365.25
     # TODO: Student can add whatever you like to the dataset here
-
+    
+    # Seasonal cycle
+    doy = df.index.dayofyear.to_numpy()
+    omega_year = 2 * math.pi / 365.25
+    df["sin_year"] = np.sin(omega_year * doy)
+    df["cos_year"] = np.cos(omega_year * doy)
     return df
 
 # TODO: Students you might find this function useful
@@ -118,58 +124,154 @@ def split_train_val(data: pd.DataFrame, val_hours: int) -> Tuple[pd.DataFrame, p
         raise ValueError("Not enough samples for requested validation window.")
     return data.iloc[:-val_hours].copy(), data.iloc[-val_hours:].copy()
 
+def solve_least_squares_svd(A: np.ndarray, y: np.ndarray) -> np.ndarray:
+    U, S, Vh = np.linalg.svd(A, full_matrices=False)
+    S_inv = np.diag(1.0 / S)
+    x = Vh.T @ S_inv @ U.T @ y
+    return x
+
+def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    return float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
+
+def mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    return float(np.mean(np.abs(y_true - y_pred)))
+
+def build_feature_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    df_feat = df.copy()
+
+    # Temperature lags
+    df_feat = add_lags(df_feat, "T", [1, 2, 3, 6, 12, 24])
+
+    # Wind lags
+    df_feat = add_lags(df_feat, "W", [1, 3, 6, 12, 24])
+
+    # Other weather lags
+    for col in ["RH", "P", "Cloud", "Prec"]:
+        if col in df_feat.columns:
+            df_feat = add_lags(df_feat, col, [1])
+
+    return df_feat
+
+def prepare_supervised_data(df_feat: pd.DataFrame, horizon: int) -> Tuple[pd.DataFrame, List[str]]:
+    data = df_feat.copy()
+
+    # Future target
+    data["T_target"] = data["T"].shift(-horizon)
+
+    feature_cols = [
+        col for col in data.columns
+        if col not in ["T_target"]
+    ]
+    
+    data = data.dropna()
+
+    return data, feature_cols
+
+def run_horizon_model(df: pd.DataFrame, horizon: int, val_hours: int = 24 * 7) -> dict:
+    data, feature_cols = prepare_supervised_data(df, horizon)
+
+    train_df, val_df = split_train_val(data, val_hours=val_hours)
+
+    X_train = train_df[feature_cols].to_numpy(dtype=float)
+    y_train = train_df["T_target"].to_numpy(dtype=float)
+
+    X_val = val_df[feature_cols].to_numpy(dtype=float)
+    y_val = val_df["T_target"].to_numpy(dtype=float)
+
+    # Add intercept
+    X_train = np.column_stack([np.ones(len(X_train)), X_train])
+    X_val = np.column_stack([np.ones(len(X_val)), X_val])
+
+    coeffs = solve_least_squares_svd(X_train, y_train)
+
+    y_train_pred = X_train @ coeffs
+    y_val_pred = X_val @ coeffs
+
+    # Persistence baseline: predict future temperature as current temperature
+    y_val_base = val_df["T"].to_numpy(dtype=float)
+
+    results = {
+        "horizon_h": horizon,
+        "coeffs": coeffs,
+        "feature_cols": ["intercept"] + feature_cols,
+        "train_rmse": rmse(y_train, y_train_pred),
+        "train_mae": mae(y_train, y_train_pred),
+        "val_rmse": rmse(y_val, y_val_pred),
+        "val_mae": mae(y_val, y_val_pred),
+        "baseline_rmse": rmse(y_val, y_val_base),
+        "baseline_mae": mae(y_val, y_val_base),
+        "val_index": val_df.index,
+        "y_val": y_val,
+        "y_val_pred": y_val_pred,
+        "y_val_base": y_val_base,
+    }
+
+    return results
+
+def plot_validation(results: dict, save_dir: str = "plots") -> None:
+    os.makedirs(save_dir, exist_ok=True)
+
+    h = results["horizon_h"]
+    idx = results["val_index"]
+
+    plt.figure(figsize=(10, 4))
+    plt.plot(idx, results["y_val"], label="Observed")
+    plt.plot(idx, results["y_val_pred"], label="Least-squares model")
+    plt.plot(idx, results["y_val_base"], label="Persistence baseline", linestyle="--")
+    plt.title(f"Temperature prediction: horizon = {h} h")
+    plt.ylabel("Temperature [°C]")
+    plt.xlabel("Time")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, f"validation_h{h}.png"), dpi=200)
+    plt.show()
 
 if __name__ == "__main__":
-    start_date = "2026-01-01"
-    end_date = "2026-03-07"
-    
-    montreal = Location(
-        name="Montreal, QC",
-        lat=45.5017,
-        lon=-73.5673,
-        timezone="America/Montreal",
-    )
+    start_date = "2025-01-01"
+    end_date = "2025-12-31"
 
-    print(f"Fetching Open-Meteo hourly data for {montreal.name}...")
-    df_raw = fetch_open_meteo_hourly(start_date, end_date, location=montreal)
-    #print(df_raw)
+    print(f"Fetching Open-Meteo hourly data for {MONTREAL.name}...")
+    df_raw = fetch_open_meteo_hourly(start_date, end_date, location=MONTREAL)
+
     print("Preprocessing...")
     df = preprocess(df_raw)
-    #print(df)
 
-    plt.figure()
+    print("Building lagged features...")
+    df_feat = build_feature_dataframe(df)
+
+    os.makedirs("plots", exist_ok=True)
+
+    plt.figure(figsize=(10, 4))
     df["T"].plot(linewidth=1)
     plt.title("Montreal hourly temperature (2m)")
     plt.ylabel("T [°C]")
-    plt.tight_layout()
     plt.grid(True)
-    plt.savefig('plots/montreal.png')
+    plt.tight_layout()
+    plt.savefig("plots/montreal_temperature.png", dpi=200)
     plt.show()
 
-    n = df.shape[0]
-    df_train = df[:n//2]
-    df_control = df[n//2+1:]
-    print(df_train.shape)
-    print(df_control.shape)
+    horizons = [1, 3, 6, 12, 24, 48]
+    summary = []
 
-    y = np.asarray(df_train['T'])
-    params = np.asarray(df_train[df_train.columns.drop('T')])
+    for h in horizons:
+        print(f"\nRunning horizon = {h} h")
+        results = run_horizon_model(df_feat, horizon=h, val_hours=24 * 7)
 
-    print(y)
-    print(params)
-    print(y[0])
-    A = params
+        summary.append({
+            "horizon_h": results["horizon_h"],
+            "train_rmse": results["train_rmse"],
+            "train_mae": results["train_mae"],
+            "val_rmse": results["val_rmse"],
+            "val_mae": results["val_mae"],
+            "baseline_rmse": results["baseline_rmse"],
+            "baseline_mae": results["baseline_mae"],
+        })
 
-    U, S, Vh = np.linalg.svd(A, full_matrices=False)
-    sigma_inv = np.diag(np.power(S, -1))
-    x = Vh.T@sigma_inv@U.T@y
-    #print(x)
-    y_fit = A@x
-    #print(y_fit)
-    rmse = np.sqrt(np.mean((y_fit - y)**2))
-    mae = np.mean(np.abs(y_fit - y))
-    plt.plot(y, label='Measurements', color='blue')
-    plt.plot(y_fit, label=f'Model, RMSE={rmse}, MAE={mae}', color='red')
-    plt.legend()
-    plt.savefig('plots/leastsquares.png')
-    plt.show()
+        plot_validation(results, save_dir="plots")
+
+    summary_df = pd.DataFrame(summary)
+    print("\nSummary of model performance:")
+    print(summary_df.to_string(index=False))
+
+    summary_df.to_csv("plots/model_summary.csv", index=False)
