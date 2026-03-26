@@ -165,7 +165,7 @@ if __name__ == "__main__":
         print(f'Running model for h={lag}h')
         #add lags for Temperature
         df_new = add_lags(df.copy(), 'T', [1, 2, 3, 4, 5, 6])
-        #df_new = add_lags(df.copy(), 'P', [1, 2, 3])
+        df_new = add_lags(df_new, 'Cloud', [1, 2, 3])
         df_new = add_future_lag(df_new, 'T', [-lag])
         #print(df_new)
         #split dataframe into training and control data
