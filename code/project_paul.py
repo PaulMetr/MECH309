@@ -154,7 +154,7 @@ if __name__ == "__main__":
     plt.ylabel("T [°C]")
     plt.tight_layout()
     plt.grid(True)
-    plt.savefig('plots/montreal.png')
+    plt.savefig('plots/paul/montreal.png')
     plt.show()
 
     n = df.shape[0] #get dataframe size
@@ -200,7 +200,7 @@ if __name__ == "__main__":
         plt.ylabel('Air Temperature (2m) [°C]')
         plt.xlabel('Time')
         plt.title(f'Air temperature measurement and prediction for Montréal, QC [lag={lag}]')
-        plt.savefig('plots/leastsquares.png')
+        plt.savefig(f'plots/paul/train_lag{lag}.png')
         plt.grid(True)
         plt.show()
         #minimum of n//2 and n//2+1
@@ -223,7 +223,7 @@ if __name__ == "__main__":
         plt.ylabel('Air Temperature (2m) [°C]')
         plt.xlabel('Time')
         plt.title(f'Air temperature measurement and prediction for Montréal, QC [lag={lag}]')
-        plt.savefig('plots/leastsquares_prediction.png')
+        plt.savefig(f'plots/paul/control_lag{lag}.png')
         plt.grid(True)
         plt.show()
         results["Scenario"].append(lag)
