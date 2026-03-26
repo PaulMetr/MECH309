@@ -101,7 +101,7 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     doy = df.index.dayofyear.to_numpy()
     omega_y = 2 * math.pi / 365.25
     # TODO: Student can add whatever you like to the dataset here
-
+    
     return df
 
 # TODO: Students you might find this function useful
@@ -199,7 +199,7 @@ if __name__ == "__main__":
         plt.legend()
         plt.ylabel('Air Temperature (2m) [°C]')
         plt.xlabel('Time')
-        plt.title(f'Air temperature measurement and prediction for Montréal, QC [lag={lag}]')
+        plt.title(f'Air temperature measurement and prediction for Montréal, QC \n Training data [lag={lag}]')
         plt.savefig(f'plots/paul/train_lag{lag}.png')
         plt.grid(True)
         plt.show()
@@ -222,7 +222,7 @@ if __name__ == "__main__":
         plt.legend()
         plt.ylabel('Air Temperature (2m) [°C]')
         plt.xlabel('Time')
-        plt.title(f'Air temperature measurement and prediction for Montréal, QC [lag={lag}]')
+        plt.title(f'Air temperature measurement and prediction for Montréal, QC \n Control data [lag={lag}]')
         plt.savefig(f'plots/paul/control_lag{lag}.png')
         plt.grid(True)
         plt.show()
