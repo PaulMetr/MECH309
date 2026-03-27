@@ -101,7 +101,7 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     doy = df.index.dayofyear.to_numpy()
     omega_y = 2 * math.pi / 365.25
     # TODO: Student can add whatever you like to the dataset here
-    
+    df["cst"] = np.ones(df.shape[0])
     return df
 
 # TODO: Students you might find this function useful
@@ -129,6 +129,10 @@ def split_train_val(data: pd.DataFrame, val_hours: int) -> Tuple[pd.DataFrame, p
         raise ValueError("Not enough samples for requested validation window.")
     return data.iloc[:-val_hours].copy(), data.iloc[-val_hours:].copy()
 
+def solve_with_svd(A: np.ndarray, b: np.ndarray)->np.ndarray:
+    U, S, Vh = np.linalg.svd(A, full_matrices=False)
+    sigma_inv = np.diag(np.power(S, -1))
+    return Vh.T@sigma_inv@U.T@b
 
 if __name__ == "__main__":
     start_date = "2026-01-01"
@@ -160,7 +164,7 @@ if __name__ == "__main__":
     n = df.shape[0] #get dataframe size
 
     lags = np.array([1, 3, 6, 12, 24, 48])
-    results: dict = {'Scenario':[], 'RMSE (train)':[], 'MAE (train)':[], 'RMSE (control)':[], 'MAE (control)':[], 'RMSE change [%]':[], 'MAE change [%]':[], 'Maximum error (control)':[]} #create results dictionary
+    results: dict = {'Scenario':[], 'RMSE (train)':[], 'MAE (train)':[], 'RMSE (baseline)': [], 'MAE (baseline)': [], 'RMSE (control)':[], 'MAE (control)':[], 'RMSE change [%]':[], 'MAE change [%]':[], 'Maximum error (control)':[]} #create results dictionary
     for lag in lags:
         print(f'Running model for h={lag}h')
         #add lags for Temperature
@@ -183,19 +187,27 @@ if __name__ == "__main__":
         #print(y[0])
         A = params
         #solve the least square problem with SVD
-        U, S, Vh = np.linalg.svd(A, full_matrices=False)
-        sigma_inv = np.diag(np.power(S, -1))
-        x = Vh.T@sigma_inv@U.T@y
+        x = solve_with_svd(A, y)
         #print(x)
         #apply it to the train data
         y_fit = A@x
-        y_fit[0] = y_fit[1]
+        df_train[f'T_pred{lag}'] = y_fit
         #compute errors
         rmse = np.sqrt(np.mean((y_fit - y)**2))
         mae = np.mean(np.abs(y_fit - y))
         #plot results
-        plt.plot(y, label='Measurements', color='blue')
-        plt.plot(y_fit, label=f'Model, RMSE={np.round(rmse, 3)}, MAE={np.round(mae, 3)}', color='red')
+        #plt.plot(y, label='Measurements', color='blue')
+        #plt.plot(y_fit, label=f'Model, RMSE={np.round(rmse, 3)}, MAE={np.round(mae, 3)}', color='red')
+        df_train = add_lags(df_train, f'T_pred{lag}', [lag])
+        if lag > 6:
+            df_train = add_lags(df_train, 'T', [lag])
+        bas = np.asarray(df_train[f'T_lag{lag}'])
+        rmse_bas = np.sqrt(np.mean((y_fit - bas)**2))
+        mae_bas = np.mean(np.abs(y_fit - bas))
+        plt.figure()
+        df_train[f'T'].plot() #measurement
+        df_train[f'T_pred{lag}_lag{lag}'].plot() #prediction
+        df_train[f'T_lag{lag}'].plot() #baseline
         plt.legend()
         plt.ylabel('Air Temperature (2m) [°C]')
         plt.xlabel('Time')
@@ -212,13 +224,13 @@ if __name__ == "__main__":
         #apply model to control data
         y_pred_fit = A_pred@x
         y_pred_fit = y_pred_fit[0:m]
-        y_pred_fit[0] = y_pred_fit[1]
         #compute new error
         rmse_pred = np.sqrt(np.mean((y_pred_fit - y_pred)**2))
         mae_pred = np.mean(np.abs(y_pred_fit - y_pred))
         #plot everything
         plt.plot(y_pred, label='Measurements', color='blue')
         plt.plot(y_pred_fit, label=f'Model, RMSE={np.round(rmse_pred, 3)}, MAE={np.round(mae_pred, 3)}', color='red')
+        #plt.plot(np.asarray(df_control[f'T'])[0:m], label='Baseline', linestyle='--', color='green')
         plt.legend()
         plt.ylabel('Air Temperature (2m) [°C]')
         plt.xlabel('Time')
@@ -229,6 +241,8 @@ if __name__ == "__main__":
         results["Scenario"].append(lag)
         results["RMSE (train)"].append(rmse)
         results["RMSE (control)"].append(rmse_pred)
+        results["RMSE (baseline)"].append(rmse_bas)
+        results["MAE (baseline)"].append(mae_bas)
         results["MAE (train)"].append(mae)
         results["MAE (control)"].append(mae_pred)
         results["RMSE change [%]"].append((rmse_pred-rmse)/rmse*100)
