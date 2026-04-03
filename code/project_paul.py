@@ -167,43 +167,37 @@ if __name__ == "__main__":
     results: dict = {'Scenario':[], 'RMSE (train)':[], 'MAE (train)':[], 'RMSE (baseline)': [], 'MAE (baseline)': [], 'RMSE (control)':[], 'MAE (control)':[], 'RMSE change [%]':[], 'MAE change [%]':[], 'Maximum error (control)':[]} #create results dictionary
     for lag in lags:
         print(f'Running model for h={lag}h')
-        #add lags for Temperature
+        #add lags for Temperature and Clouds
         df_new = add_lags(df.copy(), 'T', [1, 2, 3, 4, 5, 6])
         df_new = add_lags(df_new, 'Cloud', [1, 2, 3])
+        #create our aim
         df_new = add_future_lag(df_new, 'T', [-lag])
-        #print(df_new)
-        #split dataframe into training and control data
+        #split the database it two halves
         df_train = df_new[:n//2].copy()
         df_control = df_new[n//2+1:].copy()
-        #print to verify
-        #print(df_train.shape)
-        #print(df_control.shape)
-        #write an Ax=b problem
+        #write the Ax=b problem
         y = np.asarray(df_train[f'T_lag-{lag}']) #what we try to predict
-        #print(df_train)
+        
         params = np.asarray(df_train[df_train.columns.drop(f'T_lag-{lag}')]) #prediction parameters
-        #print(y)
-        #print(params)
-        #print(y[0])
         A = params
         #solve the least square problem with SVD
         x = solve_with_svd(A, y)
-        #print(x)
         #apply it to the train data
         y_fit = A@x
         df_train[f'T_pred{lag}'] = y_fit
         #compute errors
         rmse = np.sqrt(np.mean((y_fit - y)**2))
         mae = np.mean(np.abs(y_fit - y))
-        #plot results
-        #plt.plot(y, label='Measurements', color='blue')
-        #plt.plot(y_fit, label=f'Model, RMSE={np.round(rmse, 3)}, MAE={np.round(mae, 3)}', color='red')
+
         df_train = add_lags(df_train, f'T_pred{lag}', [lag])
         if lag > 6:
             df_train = add_lags(df_train, 'T', [lag])
+        #compare results to the baseline (T_(h+k) = T_k)
+        #CHANGE
         bas = np.asarray(df_train[f'T_lag{lag}'])
         rmse_bas = np.sqrt(np.mean((y_fit - bas)**2))
         mae_bas = np.mean(np.abs(y_fit - bas))
+        #plot results
         plt.figure()
         df_train[f'T'].plot() #measurement
         df_train[f'T_pred{lag}_lag{lag}'].plot() #prediction
