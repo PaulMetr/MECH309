@@ -101,7 +101,7 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     doy = df.index.dayofyear.to_numpy()
     omega_y = 2 * math.pi / 365.25
     # TODO: Student can add whatever you like to the dataset here
-
+    df["cst"] = np.ones(df.shape[0])
     return df
 
 # TODO: Students you might find this function useful
@@ -110,6 +110,17 @@ def add_lags(df: pd.DataFrame, col: str, lags: List[int]) -> pd.DataFrame:
         if L <= 0:
             continue
         df[f"{col}_lag{L}"] = df[col].shift(L)
+        for i in range(L):
+            df.iloc[i, df.columns.get_loc(f"{col}_lag{L}")] = df.iloc[0][col] #add the staring values
+    return df
+#add future lag
+def add_future_lag(df: pd.DataFrame, col: str, lags: List[int]) -> pd.DataFrame:
+    for L in lags:
+        if L >= 0:
+            continue
+        df[f"{col}_lag{L}"] = df[col].shift(L)
+        for i in range(np.abs(L)):
+            df.iloc[-1-i, df.columns.get_loc(f"{col}_lag{L}")] = df.iloc[-1-i][col] #add the staring values
     return df
 
 # TODO: Students you might find this function useful
@@ -118,6 +129,10 @@ def split_train_val(data: pd.DataFrame, val_hours: int) -> Tuple[pd.DataFrame, p
         raise ValueError("Not enough samples for requested validation window.")
     return data.iloc[:-val_hours].copy(), data.iloc[-val_hours:].copy()
 
+def solve_with_svd(A: np.ndarray, b: np.ndarray)->np.ndarray:
+    U, S, Vh = np.linalg.svd(A, full_matrices=False)
+    sigma_inv = np.diag(np.power(S, -1))
+    return Vh.T@sigma_inv@U.T@b
 
 if __name__ == "__main__":
     start_date = "2026-01-01"
@@ -143,72 +158,92 @@ if __name__ == "__main__":
     plt.ylabel("T [°C]")
     plt.tight_layout()
     plt.grid(True)
-    plt.savefig('plots/montreal.png')
+    plt.savefig('plots/paul/montreal.png')
     plt.show()
 
     n = df.shape[0] #get dataframe size
 
-    #add lags for Temperature
-    df = add_lags(df, 'T', [1, 2, 3])
-    df['T_lag1'][0] = df['T'][0]
-    df['T_lag2'][0] = df['T'][0]
-    df['T_lag2'][1] = df['T'][1]
-    df['T_lag3'][0] = df['T'][0]
-    df['T_lag3'][1] = df['T'][1]
-    df['T_lag3'][2] = df['T'][2]
-    #split dataframe into training and control data
-    df_train = df[:n//2].copy()
-    df_control = df[n//2+1:].copy()
-    #print to verify
-    print(df_train.shape)
-    print(df_control.shape)
-    #write an Ax=b problem
-    y = np.asarray(df_train['T']) #what we try to predict
-    print(df_train)
-    params = np.asarray(df_train[df_train.columns.drop('T')]) #prediction parameters
-    print(y)
-    print(params)
-    print(y[0])
-    A = params
-    #solve the least square problem with SVD
-    U, S, Vh = np.linalg.svd(A, full_matrices=False)
-    sigma_inv = np.diag(np.power(S, -1))
-    x = Vh.T@sigma_inv@U.T@y
-    #print(x)
-    #apply it to the train data
-    y_fit = A@x
-    #compute errors
-    rmse = np.sqrt(np.mean((y_fit - y)**2))
-    mae = np.mean(np.abs(y_fit - y))
-    #plot results
-    plt.plot(y, label='Measurements', color='blue')
-    plt.plot(y_fit, label=f'Model, RMSE={rmse}, MAE={mae}', color='red')
-    plt.legend()
-    plt.ylabel('Air Temperature (2m) [°C]')
-    plt.xlabel('Time')
-    plt.title('Air temperature measurement and prediction for Montréal, QC')
-    plt.savefig('plots/leastsquares.png')
-    plt.grid(True)
-    plt.show()
-    #minimum of n//2 and n//2+1
-    m = min(df_train.shape[0], df_control.shape[0])
-    #define new A matrix
-    params_prediction = np.asarray(df_control[df_control.columns.drop('T')])[0:m,:]
-    A_pred = params_prediction
-    y_pred = np.asarray(df_control['T'])[0:m]
-    #apply model to control data
-    y_pred_fit = A_pred@x
-    y_pred_fit = y_pred_fit[0:m]
-    #compute new error
-    rmse_pred = np.sqrt(np.mean((y_pred_fit - y_pred)**2))
-    mae_pred = np.mean(np.abs(y_pred_fit - y_pred))
-    #plot everything
-    plt.plot(y_pred, label='Measurements', color='blue')
-    plt.plot(y_pred_fit, label=f'Model, RMSE={rmse_pred}, MAE={mae_pred}', color='red')
-    plt.legend()
-    plt.ylabel('Air Temperature (2m) [°C]')
-    plt.xlabel('Time')
-    plt.title('Air temperature measurement and prediction for Montréal, QC')
-    plt.savefig('plots/leastsquares_prediction.png')
-    plt.grid(True)
-    plt.show()
+    lags = np.array([1, 3, 6, 12, 24, 48])
+    results: dict = {'Scenario':[], 'RMSE (train)':[], 'MAE (train)':[], 'RMSE (baseline)': [], 'MAE (baseline)': [], 'RMSE (control)':[], 'MAE (control)':[], 'RMSE change [%]':[], 'MAE change [%]':[], 'Maximum error (control)':[]} #create results dictionary
+    for lag in lags:
+        print(f'Running model for h={lag}h')
+        #add lags for Temperature and Clouds
+        df_new = add_lags(df.copy(), 'T', [1, 2, 3, 4, 5, 6])
+        df_new = add_lags(df_new, 'Cloud', [1, 2, 3])
+        #create our aim
+        df_new = add_future_lag(df_new, 'T', [-lag])
+        #split the database it two halves
+        df_train = df_new[:n//2].copy()
+        df_control = df_new[n//2+1:].copy()
+        #write the Ax=b problem
+        y = np.asarray(df_train[f'T_lag-{lag}']) #what we try to predict
+        
+        params = np.asarray(df_train[df_train.columns.drop(f'T_lag-{lag}')]) #prediction parameters
+        A = params
+        #solve the least square problem with SVD
+        x = solve_with_svd(A, y)
+        #apply it to the train data
+        y_fit = A@x
+        df_train[f'T_pred{lag}'] = y_fit
+        #compute errors
+        rmse = np.sqrt(np.mean((y_fit - y)**2))
+        mae = np.mean(np.abs(y_fit - y))
+
+        df_train = add_lags(df_train, f'T_pred{lag}', [lag])
+        if lag > 6:
+            df_train = add_lags(df_train, 'T', [lag])
+        #compare results to the baseline (T_(h+k) = T_k)
+        #CHANGE
+        bas = np.asarray(df_train[f'T_lag{lag}'])
+        rmse_bas = np.sqrt(np.mean((y_fit - bas)**2))
+        mae_bas = np.mean(np.abs(y_fit - bas))
+        #plot results
+        plt.figure()
+        df_train[f'T'].plot() #measurement
+        df_train[f'T_pred{lag}_lag{lag}'].plot() #prediction
+        df_train[f'T_lag{lag}'].plot() #baseline
+        plt.legend()
+        plt.ylabel('Air Temperature (2m) [°C]')
+        plt.xlabel('Time')
+        plt.title(f'Air temperature measurement and prediction for Montréal, QC \n Training data [lag={lag}]')
+        plt.savefig(f'plots/paul/train_lag{lag}.png')
+        plt.grid(True)
+        plt.show()
+        #minimum of n//2 and n//2+1
+        m = min(df_train.shape[0], df_control.shape[0])
+        #define new A matrix
+        params_prediction = np.asarray(df_control[df_control.columns.drop(f'T_lag-{lag}')])[0:m,:]
+        A_pred = params_prediction
+        y_pred = np.asarray(df_control[f'T_lag-{lag}'])[0:m]
+        #apply model to control data
+        y_pred_fit = A_pred@x
+        y_pred_fit = y_pred_fit[0:m]
+        #compute new error
+        rmse_pred = np.sqrt(np.mean((y_pred_fit - y_pred)**2))
+        mae_pred = np.mean(np.abs(y_pred_fit - y_pred))
+        #plot everything
+        plt.plot(y_pred, label='Measurements', color='blue')
+        plt.plot(y_pred_fit, label=f'Model, RMSE={np.round(rmse_pred, 3)}, MAE={np.round(mae_pred, 3)}', color='red')
+        #plt.plot(np.asarray(df_control[f'T'])[0:m], label='Baseline', linestyle='--', color='green')
+        plt.legend()
+        plt.ylabel('Air Temperature (2m) [°C]')
+        plt.xlabel('Time')
+        plt.title(f'Air temperature measurement and prediction for Montréal, QC \n Control data [lag={lag}]')
+        plt.savefig(f'plots/paul/control_lag{lag}.png')
+        plt.grid(True)
+        plt.show()
+        results["Scenario"].append(lag)
+        results["RMSE (train)"].append(rmse)
+        results["RMSE (control)"].append(rmse_pred)
+        results["RMSE (baseline)"].append(rmse_bas)
+        results["MAE (baseline)"].append(mae_bas)
+        results["MAE (train)"].append(mae)
+        results["MAE (control)"].append(mae_pred)
+        results["RMSE change [%]"].append((rmse_pred-rmse)/rmse*100)
+        results["MAE change [%]"].append((mae_pred-mae)/mae*100)
+        results["Maximum error (control)"].append(np.max(np.abs(y_pred_fit-y_pred)))
+    results_df = pd.DataFrame(results)
+    print("Results summary:")
+    print(results_df)
+    results_df.to_csv("results/models_summary.csv")
+    
